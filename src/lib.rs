@@ -1,5 +1,5 @@
 use chrono::{DateTime, Local};
-use eframe::egui;
+use eframe::{egui, NativeOptions};
 use serde::{Deserialize, Serialize};
 use std::collections::{hash_map::DefaultHasher, HashSet};
 use std::fs;
@@ -36,14 +36,14 @@ enum ViewMode {
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 enum M3ThemeSeed {
-    LavenderPurple, // Фирменный Android 17 Expressive
+    LavenderPurple,
     EmeraldMint,
     SunsetCoral,
     OceanBlue,
     CustomColor,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 enum ClipboardOp {
     Copy,
     Move,
@@ -102,9 +102,7 @@ impl AppSettings {
         }
     }
 
-    // Генерация тональной палитры Material 3 Expressive
     fn m3_palette(&self) -> (egui::Color32, egui::Color32, egui::Color32, egui::Color32) {
-        // (Surface, SurfaceContainer, PrimaryContainer, OnPrimaryContainer)
         match self.theme_seed {
             M3ThemeSeed::LavenderPurple => (
                 egui::Color32::from_rgb(20, 18, 24),
@@ -158,6 +156,7 @@ enum ActiveTab {
     Settings,
 }
 
+#[derive(Clone)]
 struct ImageEditorState {
     path: PathBuf,
     rotation: u8,
@@ -231,6 +230,7 @@ impl ImageEditorState {
     }
 }
 
+#[derive(Clone)]
 struct VideoEditorState {
     path: PathBuf,
     start_sec: f32,
@@ -281,7 +281,6 @@ impl VideoEditorState {
         match Command::new("ffmpeg").args(&args).output() {
             Ok(out) if out.status.success() => Ok(out_path),
             _ => {
-                // Если в прошивке нет CLI ffmpeg, передаем файл в системный видеоредактор Android
                 let uri = format!("file://{}", self.path.display());
                 let _ = Command::new("am")
                     .args([
@@ -295,7 +294,7 @@ impl VideoEditorState {
                         "--grant-read-uri-permission",
                     ])
                     .spawn();
-                Err("Открыт системный видеоредактор Android для рендера".into())
+                Err("Открыт системный видеоредактор Android".into())
             }
         }
     }
@@ -319,7 +318,6 @@ struct RgeApp {
     show_delete_modal: bool,
     status_toast: Option<String>,
     anim_progress: f32,
-    // Кэш быстрых миниатюр (анти-лаг)
     thumb_in_progress: Arc<Mutex<HashSet<PathBuf>>>,
 }
 
@@ -356,7 +354,6 @@ impl Default for RgeApp {
 }
 
 impl RgeApp {
-    // Применение стиля Material 3 Expressive (Android 17)
     fn apply_m3_expressive_style(&self, ctx: &egui::Context) {
         ctx.set_pixels_per_point(self.settings.ui_scale);
         let (surface, surface_cont, primary_cont, on_primary_cont) = self.settings.m3_palette();
@@ -367,7 +364,6 @@ impl RgeApp {
         visuals.window_rounding = egui::Rounding::same(28.0);
         visuals.menu_rounding = egui::Rounding::same(20.0);
 
-        // Expressive Pill-кнопки (скругление 20dp)
         visuals.widgets.inactive.rounding = egui::Rounding::same(20.0);
         visuals.widgets.inactive.bg_fill = surface_cont;
         visuals.widgets.inactive.weak_bg_fill = surface_cont;
@@ -379,7 +375,7 @@ impl RgeApp {
         visuals.widgets.active.bg_fill = primary_cont;
 
         visuals.selection.bg_fill = primary_cont;
-        visuals.selection.stroke = egui::Stroke::new(1.5, on_primary_cont);
+        visuals.selection.stroke = egui::Stroke::new(1.5_f32, on_primary_cont);
 
         ctx.set_visuals(visuals);
 
@@ -401,7 +397,6 @@ impl RgeApp {
         ctx.set_style(style);
     }
 
-    // Оптимизация: получение или фоновая генерация легкой миниатюры (220x220)
     fn get_fast_thumbnail_uri(&self, orig_path: &Path) -> String {
         let mut hasher = DefaultHasher::new();
         orig_path.hash(&mut hasher);
@@ -412,7 +407,6 @@ impl RgeApp {
             return format!("file://{}", thumb_path.display());
         }
 
-        // Запускаем фоновый поток сжатия, чтобы UI не лагал при прокрутке
         let mut lock = self.thumb_in_progress.lock().unwrap();
         if lock.len() < 4 && !lock.contains(orig_path) {
             lock.insert(orig_path.to_path_buf());
@@ -443,7 +437,6 @@ impl RgeApp {
         match self.settings.anim_style {
             AnimStyle::None => 1.0,
             AnimStyle::SmoothFade => t * t * (3.0 - 2.0 * t),
-            // Пружинный эффект Material 3 Expressive
             AnimStyle::ExpressiveSpring => {
                 1.0 - (1.0 - t).powi(3) * (1.0 - 0.15 * (t * std::f32::consts::PI).sin())
             }
@@ -564,7 +557,11 @@ impl RgeApp {
                     let res = match op {
                         ClipboardOp::Move => fs::rename(&src, &dest).or_else(|_| {
                             Self::copy_recursive(&src, &dest)?;
-                            if src.is_dir() { fs::remove_dir_all(&src) } else { fs::remove_file(&src) }
+                            if src.is_dir() {
+                                fs::remove_dir_all(&src)
+                            } else {
+                                fs::remove_file(&src)
+                            }
                         }),
                         ClipboardOp::Copy => Self::copy_recursive(&src, &dest),
                     };
@@ -791,6 +788,13 @@ impl eframe::App for RgeApp {
         egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
             ui.add_space(self.settings.top_padding);
 
+            let mut need_refresh = false;
+            let mut need_anim = false;
+            let mut apply_clip = false;
+            let mut clear_clip = false;
+            let mut pending_share: Option<Vec<PathBuf>> = None;
+            let mut pending_del: Option<Vec<PathBuf>> = None;
+
             ui.horizontal_wrapped(|ui| {
                 ui.heading("RGE");
                 ui.separator();
@@ -811,34 +815,32 @@ impl eframe::App for RgeApp {
                         if let Some(parent) = self.current_dir.parent() {
                             if parent.starts_with(ROOT_DIR) {
                                 self.current_dir = parent.to_path_buf();
-                                self.refresh_dir();
-                                self.trigger_anim();
+                                need_refresh = true;
+                                need_anim = true;
                             }
                         }
                     }
                 }
 
-                // Буфер обмена
                 if self.active_tab == ActiveTab::Explorer
                     && self.viewing_media.is_none()
                     && self.img_editor.is_none()
                     && self.vid_editor.is_none()
                 {
-                    if let Some((op, ref items)) = self.clipboard {
+                    if let Some((op, items)) = &self.clipboard {
                         let lbl = match op {
                             ClipboardOp::Copy => format!("📥 Вставить ({})", items.len()),
                             ClipboardOp::Move => format!("📥 Переместить ({})", items.len()),
                         };
                         if ui.button(lbl).clicked() {
-                            self.apply_clipboard_here();
+                            apply_clip = true;
                         }
                         if ui.button("✖").clicked() {
-                            self.clipboard = None;
+                            clear_clip = true;
                         }
                     }
                 }
 
-                // Множественный выбор
                 if self.viewing_media.is_none()
                     && self.img_editor.is_none()
                     && self.vid_editor.is_none()
@@ -857,7 +859,7 @@ impl eframe::App for RgeApp {
                     }
 
                     if !self.selected_items.is_empty() {
-                        let list: Vec<_> = self.selected_items.iter().cloned().collect();
+                        let list: Vec<PathBuf> = self.selected_items.iter().cloned().collect();
                         if ui.button("📋 Копир.").clicked() {
                             self.clipboard = Some((ClipboardOp::Copy, list.clone()));
                             self.multi_select_mode = false;
@@ -871,59 +873,71 @@ impl eframe::App for RgeApp {
                             self.status_toast = Some("Готово к переносу!".into());
                         }
                         if ui.button("📤 Отпр.").clicked() {
-                            Self::share_paths(&list);
+                            pending_share = Some(list.clone());
                         }
                         if ui.button("ℹ Свед.").clicked() {
                             self.info_targets = Some(list.clone());
                         }
                         if ui.button("🗑 Удал.").clicked() {
-                            self.request_delete(list);
+                            pending_del = Some(list);
                         }
                     }
                 }
             });
 
+            if need_refresh {
+                self.refresh_dir();
+            }
+            if need_anim {
+                self.trigger_anim();
+            }
+            if apply_clip {
+                self.apply_clipboard_here();
+            }
+            if clear_clip {
+                self.clipboard = None;
+            }
+            if let Some(list) = pending_share {
+                Self::share_paths(&list);
+            }
+            if let Some(list) = pending_del {
+                self.request_delete(list);
+            }
+
             // Капсулы вкладок Material 3 Expressive
             ui.add_space(6.0);
+            let mut switched_tab: Option<ActiveTab> = None;
             ui.horizontal_wrapped(|ui| {
                 if ui.selectable_label(self.active_tab == ActiveTab::Explorer, "📁 Папки").clicked() {
-                    self.active_tab = ActiveTab::Explorer;
-                    self.viewing_media = None;
-                    self.img_editor = None;
-                    self.vid_editor = None;
-                    self.refresh_dir();
-                    self.trigger_anim();
+                    switched_tab = Some(ActiveTab::Explorer);
                 }
                 if ui.selectable_label(self.active_tab == ActiveTab::Gallery, "🖼 Галерея").clicked() {
-                    self.active_tab = ActiveTab::Gallery;
-                    self.viewing_media = None;
-                    self.img_editor = None;
-                    self.vid_editor = None;
-                    self.scan_all_media();
-                    self.trigger_anim();
+                    switched_tab = Some(ActiveTab::Gallery);
                 }
                 if ui.selectable_label(self.active_tab == ActiveTab::Favorites, "⭐ Избранное").clicked() {
-                    self.active_tab = ActiveTab::Favorites;
-                    self.viewing_media = None;
-                    self.img_editor = None;
-                    self.vid_editor = None;
-                    self.trigger_anim();
+                    switched_tab = Some(ActiveTab::Favorites);
                 }
                 if ui.selectable_label(self.active_tab == ActiveTab::Trash, "🗑 Корзина").clicked() {
-                    self.active_tab = ActiveTab::Trash;
-                    self.viewing_media = None;
-                    self.img_editor = None;
-                    self.vid_editor = None;
-                    self.trigger_anim();
+                    switched_tab = Some(ActiveTab::Trash);
                 }
                 if ui.selectable_label(self.active_tab == ActiveTab::Settings, "⚙ Настройки").clicked() {
-                    self.active_tab = ActiveTab::Settings;
-                    self.viewing_media = None;
-                    self.img_editor = None;
-                    self.vid_editor = None;
-                    self.trigger_anim();
+                    switched_tab = Some(ActiveTab::Settings);
                 }
             });
+
+            if let Some(tab) = switched_tab {
+                self.active_tab = tab;
+                self.viewing_media = None;
+                self.img_editor = None;
+                self.vid_editor = None;
+                match tab {
+                    ActiveTab::Explorer => self.refresh_dir(),
+                    ActiveTab::Gallery => self.scan_all_media(),
+                    _ => {}
+                }
+                self.trigger_anim();
+            }
+
             ui.add_space(6.0);
         });
 
@@ -932,7 +946,6 @@ impl eframe::App for RgeApp {
         let frame = egui::Frame::central_panel(&ctx.style()).fill(surface);
 
         egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
-            // Пользовательский фото-фон
             if let Some(bg_path) = &self.settings.bg_image_path {
                 let rect = ui.max_rect();
                 let uri = format!("file://{}", bg_path);
@@ -946,18 +959,18 @@ impl eframe::App for RgeApp {
             }
 
             // 1. ФОТОРЕДАКТОР RGE
-            if let Some(ed) = &mut self.img_editor {
+            if let Some(mut ed) = self.img_editor.clone() {
+                let mut close_editor = false;
                 ui.horizontal_wrapped(|ui| {
                     if ui.button("💾 Сохранить").clicked() {
                         match ed.apply_and_save(ctx) {
                             Ok(saved) => {
                                 self.status_toast = Some(format!("Сохранено: {}", saved.display()));
                                 self.viewing_media = Some(saved);
-                                self.img_editor = None;
+                                close_editor = true;
                             }
                             Err(e) => self.status_toast = Some(format!("Ошибка: {}", e)),
                         }
-                        return;
                     }
                     if ui.button("↻ 90°").clicked() {
                         ed.rotation = (ed.rotation + 1) % 4;
@@ -968,6 +981,11 @@ impl eframe::App for RgeApp {
                     ui.checkbox(&mut ed.grayscale, "Ч/Б");
                     ui.checkbox(&mut ed.draw_mode, "✏ Кисть");
                 });
+
+                if close_editor {
+                    self.img_editor = None;
+                    return;
+                }
 
                 ui.horizontal(|ui| {
                     ui.label("Яркость:");
@@ -1008,7 +1026,7 @@ impl eframe::App for RgeApp {
                         rect.width() * ed.crop_margin,
                         rect.height() * ed.crop_margin,
                     ));
-                    painter.rect_stroke(crop_rect, 12.0, egui::Stroke::new(2.5, egui::Color32::YELLOW));
+                    painter.rect_stroke(crop_rect, 12.0, egui::Stroke::new(2.5_f32, egui::Color32::YELLOW));
                 }
 
                 if ed.draw_mode {
@@ -1026,11 +1044,13 @@ impl eframe::App for RgeApp {
                         painter.add(egui::Shape::line(pts.clone(), egui::Stroke::new(*size, *col)));
                     }
                 }
+                self.img_editor = Some(ed);
                 return;
             }
 
             // 2. ВИДЕОРЕДАКТОР RGE
-            if let Some(ved) = &mut self.vid_editor {
+            if let Some(mut ved) = self.vid_editor.clone() {
+                let mut close_ved = false;
                 egui::Frame::none()
                     .fill(surface_cont)
                     .rounding(24.0)
@@ -1061,24 +1081,31 @@ impl eframe::App for RgeApp {
                                     Ok(saved) => {
                                         self.status_toast = Some(format!("Видео сохранено: {}", saved.display()));
                                         self.viewing_media = Some(saved);
-                                        self.vid_editor = None;
+                                        close_ved = true;
                                     }
                                     Err(msg) => {
                                         self.status_toast = Some(msg);
-                                        self.vid_editor = None;
+                                        close_ved = true;
                                     }
                                 }
                             }
                             if ui.button("Отмена").clicked() {
-                                self.vid_editor = None;
+                                close_ved = true;
                             }
                         });
                     });
+
+                if close_ved {
+                    self.vid_editor = None;
+                } else {
+                    self.vid_editor = Some(ved);
+                }
                 return;
             }
 
             // 3. ПОЛНОЭКРАННЫЙ ПРОСМОТР ФОТО И ВИДЕО
             if let Some(media_path) = self.viewing_media.clone() {
+                let mut delete_current = false;
                 ui.horizontal_wrapped(|ui| {
                     let is_fav = self.settings.favorites.contains(&media_path);
                     let fav_txt = if is_fav { "★ В избранном" } else { "☆ В избранное" };
@@ -1125,9 +1152,14 @@ impl eframe::App for RgeApp {
                         self.info_targets = Some(vec![media_path.clone()]);
                     }
                     if ui.button("🗑 Удалить").clicked() {
-                        self.request_delete(vec![media_path.clone()]);
+                        delete_current = true;
                     }
                 });
+
+                if delete_current {
+                    self.request_delete(vec![media_path]);
+                    return;
+                }
 
                 if let Some(toast) = &self.status_toast {
                     ui.colored_label(egui::Color32::LIGHT_GREEN, toast);
@@ -1260,13 +1292,17 @@ impl eframe::App for RgeApp {
             }
 
             // 5. ОСНОВНОЙ СПИСОК / СЕТКА С БЫСТРЫМИ МИНИАТЮРАМИ
+            let mut clear_toast = false;
             if let Some(t) = &self.status_toast {
                 ui.horizontal(|ui| {
                     ui.colored_label(egui::Color32::LIGHT_GREEN, t);
                     if ui.button("✖").clicked() {
-                        self.status_toast = None;
+                        clear_toast = true;
                     }
                 });
+            }
+            if clear_toast {
+                self.status_toast = None;
             }
 
             let items_to_show: Vec<PathBuf> = match self.active_tab {
@@ -1297,6 +1333,8 @@ impl eframe::App for RgeApp {
                 ActiveTab::Settings => Vec::new(),
             };
 
+            let mut clicked_item: Option<PathBuf> = None;
+
             egui::ScrollArea::vertical().show(ui, |ui| {
                 let use_grid = self.active_tab == ActiveTab::Gallery
                     || self.settings.explorer_view == ViewMode::Grid;
@@ -1306,47 +1344,51 @@ impl eframe::App for RgeApp {
                     let cell_size = (ui.available_width() / cols as f32) - 8.0;
 
                     ui.horizontal_wrapped(|ui| {
-                        for path in items_to_show {
-                            let is_selected = self.selected_items.contains(&path);
-                            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+                        for path in &items_to_show {
+                            let is_selected = self.selected_items.contains(path);
+                            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?").to_string();
 
                             ui.vertical(|ui| {
                                 ui.set_width(cell_size);
-                                let clicked = if Self::is_image(&path) {
-                                    // Используем легкую миниатюру для 60 FPS без лагов
-                                    let thumb_uri = self.get_fast_thumbnail_uri(&path);
+                                let clicked = if Self::is_image(path) {
+                                    let thumb_uri = self.get_fast_thumbnail_uri(path);
                                     let img = egui::Image::new(thumb_uri)
                                         .rounding(16.0)
                                         .fit_to_exact_size(egui::vec2(cell_size, cell_size - 26.0));
                                     ui.add(egui::ImageButton::new(img).selected(is_selected)).clicked()
                                 } else {
-                                    let icon = if path.is_dir() { "📁" } else if Self::is_video(&path) { "🎬" } else { "📄" };
+                                    let icon = if path.is_dir() {
+                                        "📁"
+                                    } else if Self::is_video(path) {
+                                        "🎬"
+                                    } else {
+                                        "📄"
+                                    };
                                     ui.add_sized(
                                         [cell_size, cell_size - 26.0],
-                                        egui::SelectableLabel::new(is_selected, format!("{}
-{}", icon, name)),
+                                        egui::SelectableLabel::new(is_selected, format!("{}\n{}", icon, name)),
                                     )
                                     .clicked()
                                 };
 
                                 if clicked {
-                                    self.handle_item_click(path.clone());
+                                    clicked_item = Some(path.clone());
                                 }
                                 if ui.small_button("⋮ Действия").clicked() {
-                                    self.action_target = Some(path);
+                                    self.action_target = Some(path.clone());
                                 }
                             });
                         }
                     });
                 } else {
-                    for path in items_to_show {
-                        let is_selected = self.selected_items.contains(&path);
-                        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("???");
+                    for path in &items_to_show {
+                        let is_selected = self.selected_items.contains(path);
+                        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("???").to_string();
                         let icon = if path.is_dir() {
                             "📁"
-                        } else if Self::is_image(&path) {
+                        } else if Self::is_image(path) {
                             "🖼"
-                        } else if Self::is_video(&path) {
+                        } else if Self::is_video(path) {
                             "🎬"
                         } else {
                             "📄"
@@ -1365,16 +1407,16 @@ impl eframe::App for RgeApp {
                             .show(ui, |ui| {
                                 ui.horizontal(|ui| {
                                     if ui.selectable_label(is_selected, format!("{}{} {}", prefix, icon, name)).clicked() {
-                                        self.handle_item_click(path.clone());
+                                        clicked_item = Some(path.clone());
                                     }
                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                         if self.active_tab == ActiveTab::Trash {
                                             if ui.button("♻").clicked() {
-                                                let dest = Path::new(ROOT_DIR).join(name);
-                                                let _ = fs::rename(&path, dest);
+                                                let dest = Path::new(ROOT_DIR).join(&name);
+                                                let _ = fs::rename(path, dest);
                                             }
                                         } else if ui.button("⋮").clicked() {
-                                            self.action_target = Some(path);
+                                            self.action_target = Some(path.clone());
                                         }
                                     });
                                 });
@@ -1382,6 +1424,10 @@ impl eframe::App for RgeApp {
                     }
                 }
             });
+
+            if let Some(p) = clicked_item {
+                self.handle_item_click(p);
+            }
         });
     }
 }

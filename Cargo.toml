@@ -1,0 +1,30 @@
+[package]
+name = "rust_explorer_gallery"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+eframe = { version = "0.29", default-features = false, features = ["glow", "android-native-activity"] }
+egui = "0.29"
+egui_extras = { version = "0.29", features = ["image", "file"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+android_logger = "0.14"
+log = "0.4"
+
+[package.metadata.android]
+package = "com.example.rustexplorergallery"
+build_targets = ["aarch64-linux-android"]
+target_sdk_version = 36
+min_sdk_version = 24
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.READ_EXTERNAL_STORAGE"
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.READ_MEDIA_IMAGES"
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.MANAGE_EXTERNAL_STORAGE"

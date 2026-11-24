@@ -33,7 +33,7 @@ package = "com.rge.explorer"
 build_targets = ["aarch64-linux-android"]
 target_sdk_version = 36
 min_sdk_version = 24
-resources = "res"
+res = "res"
 
 [package.metadata.android.application]
 label = "RGE"

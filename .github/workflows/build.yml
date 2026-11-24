@@ -22,11 +22,11 @@ jobs:
       - name: Установить cargo-apk
         run: cargo install cargo-apk
 
-      - name: Установить Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Скачать NDK и Build-Tools
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018"
+      - name: Настроить Android SDK и NDK
+        run: |
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018"
 
       - name: Собрать APK
         env:

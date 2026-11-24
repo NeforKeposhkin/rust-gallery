@@ -24,13 +24,14 @@ jobs:
 
       - name: Сгенерировать Material 3 иконку RGE
         run: |
+          pip install pillow
           mkdir -p res/mipmap-xxxhdpi
           python3 -c '
           from PIL import Image, ImageDraw, ImageFont
           img = Image.new("RGBA", (512, 512), (20, 18, 24, 255))
           draw = ImageDraw.Draw(img)
           draw.rounded_rectangle([24, 24, 488, 488], radius=140, fill=(208, 188, 255, 255))
-          draw.rounded_rectangle([48, 48, 464, 464], radius=120, fill=(79, 55, 139, 255))
+          draw.rounded_rectangle([44, 44, 468, 468], radius=120, fill=(79, 55, 139, 255))
           try:
               font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 310)
           except:

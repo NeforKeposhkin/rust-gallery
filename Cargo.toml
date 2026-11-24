@@ -1,6 +1,6 @@
 [package]
-name = "rust_explorer_gallery"
-version = "0.1.0"
+name = "rge"
+version = "1.0.0"
 edition = "2021"
 
 [lib]
@@ -11,21 +11,54 @@ eframe = { version = "0.29", default-features = false, features = ["glow", "andr
 egui = "0.29"
 egui_extras = { version = "0.29", features = ["image", "file"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = "0.4"
 winit = { version = "0.30", features = ["android-native-activity"] }
 android_logger = "0.14"
 log = "0.4"
 
+# Максимальное сжатие итогового APK (~4.5 - 6 МБ)
+[profile.release]
+strip = true
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+
 [package.metadata.android]
-package = "com.example.rustexplorergallery"
+package = "com.rge.explorer"
 build_targets = ["aarch64-linux-android"]
 target_sdk_version = 36
 min_sdk_version = 24
+resources = "res"
+
+[package.metadata.android.application]
+label = "RGE"
+icon = "@mipmap/ic_launcher"
 
 [[package.metadata.android.uses_permission]]
 name = "android.permission.READ_EXTERNAL_STORAGE"
 
 [[package.metadata.android.uses_permission]]
+name = "android.permission.WRITE_EXTERNAL_STORAGE"
+
+[[package.metadata.android.uses_permission]]
 name = "android.permission.READ_MEDIA_IMAGES"
 
 [[package.metadata.android.uses_permission]]
+name = "android.permission.READ_MEDIA_VIDEO"
+
+[[package.metadata.android.uses_permission]]
 name = "android.permission.MANAGE_EXTERNAL_STORAGE"
+
+# Регистрация RGE как системного просмотрщика фото и видео
+[[package.metadata.android.application.activity.intent_filter]]
+action = ["android.intent.action.VIEW"]
+category = ["android.intent.category.DEFAULT"]
+data = [
+    { scheme = "file", mimeType = "image/*" },
+    { scheme = "content", mimeType = "image/*" },
+    { scheme = "file", mimeType = "video/*" },
+    { scheme = "content", mimeType = "video/*" }
+]

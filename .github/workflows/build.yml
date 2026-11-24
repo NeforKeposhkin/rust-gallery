@@ -1,0 +1,40 @@
+name: Build Android APK
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Скачать код проекта
+        uses: actions/checkout@v4
+
+      - name: Установить Rust и цель для Android
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Кэшировать зависимости Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Установить cargo-apk
+        run: cargo install cargo-apk
+
+      - name: Установить Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Скачать NDK и Build-Tools
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018"
+
+      - name: Собрать APK
+        env:
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_HOME }}/ndk/27.2.12479018
+        run: cargo apk build --release
+
+      - name: Сохранить готовый APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-explorer-apk
+          path: target/release/apk/*.apk

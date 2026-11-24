@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build RGE APK
 
 on:
   push:
@@ -22,6 +22,25 @@ jobs:
       - name: Установить cargo-apk
         run: cargo install cargo-apk
 
+      - name: Сгенерировать Material 3 иконку RGE
+        run: |
+          mkdir -p res/mipmap-xxxhdpi
+          python3 -c '
+          from PIL import Image, ImageDraw, ImageFont
+          img = Image.new("RGBA", (512, 512), (20, 18, 24, 255))
+          draw = ImageDraw.Draw(img)
+          draw.rounded_rectangle([24, 24, 488, 488], radius=140, fill=(208, 188, 255, 255))
+          draw.rounded_rectangle([48, 48, 464, 464], radius=120, fill=(79, 55, 139, 255))
+          try:
+              font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 310)
+          except:
+              font = ImageFont.load_default()
+          bbox = draw.textbbox((0, 0), "R", font=font)
+          w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+          draw.text(((512 - w) / 2 - bbox[0], (512 - h) / 2 - bbox[1] - 10), "R", fill=(234, 221, 255, 255), font=font)
+          img.save("res/mipmap-xxxhdpi/ic_launcher.png")
+          '
+
       - name: Настроить Android SDK и NDK
         run: |
           export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
@@ -31,11 +50,18 @@ jobs:
           echo "ANDROID_NDK_ROOT=$NDK_DIR" >> $GITHUB_ENV
           echo "NDK_HOME=$NDK_DIR" >> $GITHUB_ENV
 
-      - name: Собрать APK
-        run: cargo apk build
+      - name: Собрать сжатый Release APK
+        run: |
+          keytool -genkey -v -keystore release.keystore -alias mykey -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=RGE,O=RGE,C=US"
+          cargo apk build --release
+
+      - name: Подписать APK
+        run: |
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME/build-tools/"* | sort -V | tail -n 1)
+          "$BUILD_TOOLS/apksigner" sign --ks release.keystore --ks-pass pass:123456 target/release/apk/rge.apk
 
       - name: Сохранить готовый APK
         uses: actions/upload-artifact@v4
         with:
-          name: rust-explorer-apk
-          path: target/debug/apk/*.apk
+          name: RGE-Android-APK
+          path: target/release/apk/rge.apk

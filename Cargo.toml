@@ -26,7 +26,9 @@ lto = true
 codegen-units = 1
 panic = "abort"
 
-[package.metadata.android]
+[package.metadata.android.signing.release]
+path = "release.keystore"
+keystore_password = "123456"
 package = "com.rge.explorer"
 build_targets = ["aarch64-linux-android"]
 target_sdk_version = 36

@@ -163,19 +163,22 @@ impl eframe::App for ExplorerGalleryApp {
 
 #[cfg(target_os = "android")]
 #[no_mangle]
-fn android_main(app: eframe::winit::platform::android::activity::AndroidApp) {
+fn android_main(app: winit::platform::android::activity::AndroidApp) {
+    use winit::platform::android::EventLoopBuilderExtAndroid;
+
     android_logger::init_once(
         android_logger::Config::default().with_max_level(log::LevelFilter::Info),
     );
 
     let mut options = NativeOptions::default();
-    options.android_app = Some(app);
+    options.event_loop_builder = Some(Box::new(move |builder| {
+        builder.with_android_app(app);
+    }));
 
     eframe::run_native(
         "Rust Explorer",
         options,
         Box::new(|cc| {
-            // Обязательно подключаем загрузчики изображений
             egui_extras::install_image_loaders(&cc.egui_ctx);
             Ok(Box::new(ExplorerGalleryApp::default()))
         }),

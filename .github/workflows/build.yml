@@ -32,10 +32,10 @@ jobs:
           echo "NDK_HOME=$NDK_DIR" >> $GITHUB_ENV
 
       - name: Собрать APK
-        run: cargo apk build --release
+        run: cargo apk build
 
       - name: Сохранить готовый APK
         uses: actions/upload-artifact@v4
         with:
           name: rust-explorer-apk
-          path: target/release/apk/*.apk
+          path: target/debug/apk/*.apk
